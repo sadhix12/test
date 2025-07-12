@@ -1,0 +1,54 @@
+name: Deploy to Server
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Select environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - prod
+      build_confirmation:
+        description: 'Type "yes" to confirm build'
+        required: true
+        default: 'no'
+
+jobs:
+  deploy:
+    if: ${{ github.event.inputs.build_confirmation == 'yes' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set deployment variables
+        id: set-vars
+        run: |
+          if [ "${{ github.event.inputs.environment }}" = "dev" ]; then
+            echo "SSH_KEY=${{ secrets.DEV_SSH_KEY }}" >> $GITHUB_ENV
+            echo "SERVER_IP=${{ secrets.DEV_SERVER_IP }}" >> $GITHUB_ENV
+            echo "FILE_PATH=dev/de.html" >> $GITHUB_ENV
+            echo "TMP_FILE=/tmp/dev_de.html" >> $GITHUB_ENV
+          else
+            echo "SSH_KEY=${{ secrets.PROD_SSH_KEY }}" >> $GITHUB_ENV
+            echo "SERVER_IP=${{ secrets.PROD_SERVER_IP }}" >> $GITHUB_ENV
+            echo "FILE_PATH=prod/prod.html" >> $GITHUB_ENV
+            echo "TMP_FILE=/tmp/prod_prod.html" >> $GITHUB_ENV
+          fi
+
+      - name: Save SSH Key
+        run: |
+          echo "$SSH_KEY" > private_key.pem
+          chmod 600 private_key.pem
+        env:
+          SSH_KEY: ${{ env.SSH_KEY }}
+
+      - name: Copy file to server
+        run: |
+          cp $FILE_PATH $TMP_FILE
+          scp -o StrictHostKeyChecking=no -i private_key.pem $TMP_FILE ${{ secrets.SSH_USER }}@$SERVER_IP:/home/${{ secrets.SSH_USER }}/
+          ssh -o StrictHostKeyChecking=no -i private_key.pem ${{ secrets.SSH_USER }}@$SERVER_IP "ls -l /home/${{ secrets.SSH_USER }}/"
